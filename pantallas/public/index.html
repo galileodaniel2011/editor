@@ -148,7 +148,7 @@ function render() {
       <div class="row">
         <button class="sm" onclick="edit('${s.id}')">✏️ Contenido</button>
         ${s.override ? `<button class="sm sec" onclick="clearNow('${s.id}')">Quitar ⚡</button>` : ''}
-        <button class="sm sec" onclick="toggleWall('${s.id}')">🧱 Muro</button>
+        <button class="sm sec" onclick="toggleWall('${s.id}')">🧱 Varias TVs</button>
         <button class="sm sec" onclick="reload('${s.id}')">🔄</button>
         <button class="sm sec" onclick="delScreen('${s.id}')">🗑️</button>
       </div>
@@ -225,26 +225,40 @@ window.addToDraft = (mediaId) => {
 let walls = {};
 try { walls = JSON.parse(localStorage.getItem('walls')) || {}; } catch (e) {}
 const saveWalls = () => { try { localStorage.setItem('walls', JSON.stringify(walls)); } catch (e) {} };
-window.toggleWall = (id) => { walls[id] = walls[id] ? null : { cols: 3, rows: 1, vert: false }; if (!walls[id]) delete walls[id]; saveWalls(); render(); };
+window.toggleWall = (id) => { walls[id] = walls[id] ? null : { mode: 'muro', cols: 3, rows: 1, vert: false }; if (!walls[id]) delete walls[id]; saveWalls(); render(); };
 window.setWall = (id, k, v) => { walls[id][k] = v; saveWalls(); render(); };
 function wallBox(id) {
-  const w = walls[id], n = w.cols * w.rows;
+  const w = walls[id], jump = w.mode === 'salto';
+  const n = jump ? w.cols : w.cols * w.rows;
   const opt = (max, val) => Array.from({ length: max }, (_, i) => `<option ${i + 1 === val ? 'selected' : ''}>${i + 1}</option>`).join('');
-  const W = w.cols * (w.vert ? 1080 : 1920), H = w.rows * (w.vert ? 1920 : 1080);
+  const one = w.vert ? [1080, 1920] : [1920, 1080];
+  const W = jump ? one[0] : w.cols * one[0], H = jump ? one[1] : w.rows * one[1];
+  const rot = w.vert ? '&rotar=90' : '';
   const urls = Array.from({ length: n }, (_, i) => {
-    const url = `${location.origin}/player.html?pantalla=${id}&muro=${w.cols}x${w.rows}&pos=${i + 1}${w.vert ? '&rotar=90' : ''}`;
-    return `<div style="margin:6px 0"><b>TV ${i + 1}</b> <span class="mut">(fila ${Math.floor(i / w.cols) + 1}, columna ${i % w.cols + 1})</span><br><code>${url}</code></div>`;
+    const url = jump
+      ? `${location.origin}/player.html?pantalla=${id}&salto=${n}&pos=${i + 1}${rot}`
+      : `${location.origin}/player.html?pantalla=${id}&muro=${w.cols}x${w.rows}&pos=${i + 1}${rot}`;
+    const where = jump ? (i === 0 ? 'la primera' : i === n - 1 ? 'la última' : 'siguiente')
+      : `fila ${Math.floor(i / w.cols) + 1}, columna ${i % w.cols + 1}`;
+    return `<div style="margin:6px 0"><b>TV ${i + 1}</b> <span class="mut">(${where})</span><br><code>${url}</code></div>`;
   }).join('');
   return `<div style="flex-basis:100%;background:var(--bg);border-radius:10px;padding:12px;margin-top:6px">
-    <b>🧱 Muro de pantallas</b>
-    <p class="mut" style="margin:6px 0">Varias TVs juntas muestran <b>una sola imagen grande</b> y cambian al mismo tiempo.</p>
+    <b>🧱 Varias TVs juntas</b>
+    <div class="row" style="margin:8px 0">
+      <label><input type="radio" name="m-${id}" ${!jump ? 'checked' : ''} onchange="setWall('${id}','mode','muro')"> <b>Pegadas</b> (una imagen grande repartida)</label>
+      <label><input type="radio" name="m-${id}" ${jump ? 'checked' : ''} onchange="setWall('${id}','mode','salto')"> <b>Separadas</b> (las imágenes saltan de una TV a otra)</label>
+    </div>
     <div class="row">
-      <label>TVs a lo ancho <select onchange="setWall('${id}','cols',+this.value)">${opt(6, w.cols)}</select></label>
-      <label>de alto <select onchange="setWall('${id}','rows',+this.value)">${opt(4, w.rows)}</select></label>
+      ${jump
+        ? `<label>¿Cuántas TVs? <select onchange="setWall('${id}','cols',+this.value)">${opt(8, w.cols)}</select></label>`
+        : `<label>TVs a lo ancho <select onchange="setWall('${id}','cols',+this.value)">${opt(6, w.cols)}</select></label>
+           <label>de alto <select onchange="setWall('${id}','rows',+this.value)">${opt(4, w.rows)}</select></label>`}
       <label><input type="checkbox" ${w.vert ? 'checked' : ''} onchange="setWall('${id}','vert',this.checked)"> TVs paradas (vertical)</label>
     </div>
     <p style="margin:10px 0 4px">📐 Diseña tus imágenes y videos de <b>${W} × ${H} px</b> y agrégalos con ✏️ Contenido.</p>
-    <p class="mut" style="margin:0 0 6px">Abre en cada TV su dirección (la TV muestra su número unos segundos para que sepas cuál es):</p>
+    <p class="mut" style="margin:0 0 6px">${jump
+      ? 'Cada imagen aparece en la TV 1, luego salta a la TV 2, luego a la 3… Todas cambian al mismo tiempo.'
+      : 'Todas las TVs cambian al mismo tiempo.'} Abre en cada TV su dirección (la TV muestra su número unos segundos):</p>
     ${urls}
   </div>`;
 }

@@ -76,10 +76,11 @@ Si la TV está girada físicamente y la imagen sale de lado, agrega `&rotar=90` 
 Para esas pantallas, diseña el contenido en vertical: **1080 × 1920**.
 
 ### Muro de pantallas (varias TVs = una imagen grande)
-En el panel, en la pantalla que quieras, toca **🧱 Muro**, elige cuántas TVs van a lo ancho y a lo alto, y abre en cada TV la dirección que te muestra (por ejemplo `&muro=3x1&pos=2`).
+En el panel, en la pantalla que quieras, toca **🧱 Varias TVs** → **Pegadas**, elige cuántas TVs van a lo ancho y a lo alto, y abre en cada TV la dirección que te muestra (por ejemplo `&muro=3x1&pos=2`).
 - Diseña el contenido del tamaño de todo el muro (el panel te dice cuánto, por ejemplo **5760 × 1080** para 3 TVs horizontales).
 - Todas las TVs del muro cambian **al mismo tiempo** (usan el reloj del servidor).
-- Si quieres varias pantallas separadas pero sincronizadas, agrega `&sincronizar=1`.
+- **Separadas (salto):** en el mismo botón elige "Separadas". Son TVs en distintas zonas del local: cada imagen aparece en la TV 1, luego salta a la TV 2, luego a la 3… (dirección con `&salto=3&pos=1`).
+- Si quieres varias pantallas separadas que muestren lo mismo al mismo tiempo, agrega `&sincronizar=1`.
 
 Los videos se reproducen **sin sonido**, porque los navegadores bloquean el autoplay con audio. Funcionan mejor en **MP4 (H.264)**.
 
