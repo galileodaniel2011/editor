@@ -6,6 +6,11 @@
 <title>Pantalla</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  #root { position: absolute; inset: 0; overflow: hidden; }
+  #root.r90, #root.r270 { inset: auto; top: 50%; left: 50%; width: 100vh; height: 100vw; }
+  #root.r90 { transform: translate(-50%, -50%) rotate(90deg); }
+  #root.r270 { transform: translate(-50%, -50%) rotate(-90deg); }
+  #root.r180 { transform: rotate(180deg); }
   .slot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
           opacity: 0; transition: opacity .8s ease; background: #000; }
   .slot.on { opacity: 1; }
@@ -18,8 +23,10 @@
 </style>
 </head>
 <body>
+<div id="root">
 <div id="msg">Conectando…</div>
 <div id="stage"></div>
+</div>
 <div id="dot"></div>
 <div id="start">Toca para iniciar la pantalla</div>
 
@@ -30,6 +37,9 @@ const params = new URLSearchParams(location.search);
 const SCREEN = (params.get('pantalla') || 'pantalla-1').toLowerCase();
 const KEY = 'signage:' + SCREEN;
 document.title = 'Pantalla ' + SCREEN;
+// Pantalla girada: player.html?pantalla=x&rotar=90  (o 270 / 180)
+const ROT = params.get('rotar');
+if (['90', '180', '270'].includes(ROT)) document.getElementById('root').className = 'r' + ROT;
 
 const stage = document.getElementById('stage');
 const msg = document.getElementById('msg');

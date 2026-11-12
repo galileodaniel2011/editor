@@ -70,6 +70,11 @@ Cualquier aparato con navegador sirve. Lo más barato y estable es un **TV box A
 En un Smart TV con navegador o en un mini PC con Chrome en modo kiosco también funciona:
 `chrome --kiosk --autoplay-policy=no-user-gesture-required "https://TU-SERVIDOR/player.html?pantalla=centro-caja"`
 
+### Pantallas en vertical
+Si la TV está girada físicamente y la imagen sale de lado, agrega `&rotar=90` al final de la dirección (si queda de cabeza, usa `&rotar=270`):
+`https://TU-SERVIDOR/player.html?pantalla=centro-menu&rotar=90`
+Para esas pantallas, diseña el contenido en vertical: **1080 × 1920**.
+
 Los videos se reproducen **sin sonido**, porque los navegadores bloquean el autoplay con audio. Funcionan mejor en **MP4 (H.264)**.
 
 ## Archivos
