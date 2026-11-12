@@ -14,8 +14,9 @@ const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
 const PASSWORD = process.env.ADMIN_PASSWORD || 'cambiar123'; // ¡cámbiala!
-const DATA_FILE = path.join(__dirname, 'data.json');
-const UPLOADS = path.join(__dirname, 'uploads');
+const DATA_DIR = process.env.DATA_DIR || __dirname; // carpeta donde se guarda todo
+const DATA_FILE = path.join(DATA_DIR, 'data.json');
+const UPLOADS = path.join(DATA_DIR, 'uploads');
 fs.mkdirSync(UPLOADS, { recursive: true });
 
 // ---------- "Base de datos" sencilla en un archivo JSON ----------

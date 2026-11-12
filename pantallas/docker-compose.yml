@@ -1,0 +1,15 @@
+# Corre el sistema de pantallas al lado de Supabase, en la misma red que su Caddy.
+services:
+  pantallas:
+    build: .
+    container_name: pantallas
+    restart: unless-stopped
+    env_file: .env            # aquí va ADMIN_PASSWORD=tuClave
+    volumes:
+      - ./datos:/data         # fotos, videos y listas (no se borran al actualizar)
+    networks: [supabase]
+
+networks:
+  supabase:
+    external: true
+    name: ${SUPABASE_NETWORK:-supabase_default}
