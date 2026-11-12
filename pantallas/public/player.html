@@ -11,42 +11,73 @@
   #root.r90 { transform: translate(-50%, -50%) rotate(90deg); }
   #root.r270 { transform: translate(-50%, -50%) rotate(-90deg); }
   #root.r180 { transform: rotate(180deg); }
+  #stage { position: absolute; inset: 0; overflow: hidden; }
   .slot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
           opacity: 0; transition: opacity .8s ease; background: #000; }
   .slot.on { opacity: 1; }
+  /* En un muro, cada pantalla muestra solo su pedazo de la imagen grande */
+  .wall .slot { object-fit: cover; transition: opacity .4s ease; }
   #msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
          color: #888; font: 24px system-ui, sans-serif; text-align: center; padding: 20px; }
   #dot { position: absolute; right: 8px; bottom: 8px; width: 8px; height: 8px; border-radius: 50%; background: #c33; }
   #dot.ok { background: transparent; }
   #start { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
            background: #000c; color: #fff; font: 28px system-ui; cursor: pointer; }
+  #tag { position: absolute; left: 0; right: 0; bottom: 30%; text-align: center; font: bold 15vmin system-ui;
+         color: #fff; text-shadow: 0 0 20px #000; display: none; }
 </style>
 </head>
 <body>
 <div id="root">
 <div id="msg">Conectando…</div>
 <div id="stage"></div>
+<div id="tag"></div>
 </div>
 <div id="dot"></div>
 <div id="start">Toca para iniciar la pantalla</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-// Nombre de la pantalla: player.html?pantalla=local1
+// ------------------------------------------------------------
+//  Dirección:  player.html?pantalla=NOMBRE
+//  Opcional:   &rotar=90 | 180 | 270      (TV girada)
+//              &muro=3x1&pos=2            (muro de 3 de ancho x 1 de alto, esta es la 2ª)
+//              &sincronizar=1             (varias pantallas cambian al mismo tiempo)
+// ------------------------------------------------------------
 const params = new URLSearchParams(location.search);
 const SCREEN = (params.get('pantalla') || 'pantalla-1').toLowerCase();
 const KEY = 'signage:' + SCREEN;
 document.title = 'Pantalla ' + SCREEN;
-// Pantalla girada: player.html?pantalla=x&rotar=90  (o 270 / 180)
-const ROT = params.get('rotar');
-if (['90', '180', '270'].includes(ROT)) document.getElementById('root').className = 'r' + ROT;
 
+const root = document.getElementById('root');
 const stage = document.getElementById('stage');
 const msg = document.getElementById('msg');
 const dot = document.getElementById('dot');
 
-let data = null;          // { playlist, override }
-let index = -1, timer = null, current = null;
+const ROT = params.get('rotar');
+if (['90', '180', '270'].includes(ROT)) root.className = 'r' + ROT;
+
+// --- Muro de pantallas ---
+const [COLS, ROWS] = (params.get('muro') || '1x1').toLowerCase().split('x').map((n) => Math.max(1, parseInt(n) || 1));
+const POS = Math.min(COLS * ROWS, Math.max(1, parseInt(params.get('pos')) || 1));
+const WALL = COLS * ROWS > 1;
+const COL = (POS - 1) % COLS, ROW = Math.floor((POS - 1) / COLS);
+const SYNC = WALL || params.get('sincronizar') === '1';
+if (WALL) {
+  stage.classList.add('wall');
+  document.title += ` (${POS} de ${COLS * ROWS})`;
+  // Muestra el número de la pantalla los primeros segundos (ayuda al instalar)
+  const tag = document.getElementById('tag');
+  tag.textContent = POS; tag.style.display = 'block';
+  setTimeout(() => (tag.style.display = 'none'), 8000);
+}
+
+// --- Reloj compartido con el servidor (para que todas cambien a la vez) ---
+let clockOffset = 0;
+const now = () => Date.now() + clockOffset;
+
+let data = null;          // { playlist, override, startedAt }
+let index = -1, timer = null, current = null, currentKey = '';
 
 // Si se va el internet, seguimos con la última playlist guardada
 try { data = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
@@ -61,10 +92,19 @@ function makeEl(item) {
   }
   el.src = item.url;
   el.className = 'slot';
+  if (WALL) {
+    // La imagen se dibuja del tamaño de TODO el muro y se corre para mostrar solo este pedazo
+    el.style.inset = 'auto';
+    el.style.width = COLS * 100 + '%';
+    el.style.height = ROWS * 100 + '%';
+    el.style.left = -COL * 100 + '%';
+    el.style.top = -ROW * 100 + '%';
+  }
   return el;
 }
 
-function show(item, onEnd, loopForever) {
+// seekSec: en modo sincronizado, desde qué segundo arrancar el video
+function show(item, onEnd, loopForever, seekSec) {
   clearTimeout(timer);
   const el = makeEl(item);
   stage.appendChild(el);
@@ -74,53 +114,93 @@ function show(item, onEnd, loopForever) {
 
   if (item.type === 'video') {
     el.loop = !!loopForever;
-    el.onended = onEnd;
-    el.onerror = () => { timer = setTimeout(onEnd, 2000); };
+    if (seekSec) el.addEventListener('loadedmetadata', () => { el.currentTime = seekSec % (el.duration || Infinity); }, { once: true });
+    if (onEnd) el.onended = onEnd;
+    el.onerror = () => { if (onEnd) timer = setTimeout(onEnd, 2000); };
     el.play().catch(() => { document.getElementById('start').style.display = 'flex'; });
-    // Seguro: si el video se queda colgado, avanzar igual
-    if (!loopForever) timer = setTimeout(onEnd, 30 * 60000);
+    if (!loopForever && onEnd) timer = setTimeout(onEnd, 30 * 60000); // seguro anti-cuelgue
   } else if (!loopForever) {
     el.onerror = () => { timer = setTimeout(onEnd, 2000); };
     timer = setTimeout(onEnd, (item.duration || 10) * 1000);
   }
 }
 
+function showEmpty() {
+  if (current) { current.remove(); current = null; }
+  currentKey = '';
+  msg.style.display = 'flex';
+  msg.textContent = 'Pantalla "' + SCREEN + '" lista. Asígnale contenido desde el panel.';
+}
+
+function overrideActive() { return data.override && data.override.until > now(); }
+
+// ---- Modo normal: cada pantalla avanza a su ritmo ----
 function next() {
   if (!data) return;
-  // 1) ¿Hay un "Mostrar YA" activo?
-  if (data.override && data.override.until > Date.now()) {
+  if (overrideActive()) {
     msg.style.display = 'none';
     show(data.override, null, true);
-    timer = setTimeout(next, data.override.until - Date.now());
+    timer = setTimeout(next, data.override.until - now());
     return;
   }
-  // 2) Playlist normal en bucle
   const list = data.playlist || [];
-  if (!list.length) {
-    if (current) { current.remove(); current = null; }
-    msg.style.display = 'flex';
-    msg.textContent = 'Pantalla "' + SCREEN + '" lista. Asígnale contenido desde el panel.';
-    return;
-  }
+  if (!list.length) return showEmpty();
   msg.style.display = 'none';
   index = (index + 1) % list.length;
   show(list[index], next, list.length === 1 && list[0].type === 'video');
 }
+
+// ---- Modo sincronizado / muro: todas calculan lo mismo con el mismo reloj ----
+function syncTick() {
+  clearTimeout(timer);
+  if (!data) return;
+  if (overrideActive()) {
+    msg.style.display = 'none';
+    const key = 'ov:' + data.override.url;
+    if (currentKey !== key) { currentKey = key; show(data.override, null, true); }
+    timer = setTimeout(syncTick, Math.min(data.override.until - now(), 60000));
+    return;
+  }
+  const list = data.playlist || [];
+  if (!list.length) return showEmpty();
+  msg.style.display = 'none';
+
+  const durs = list.map((it) => (it.duration || 10) * 1000);
+  const total = durs.reduce((a, b) => a + b, 0);
+  let t = ((now() - (data.startedAt || 0)) % total + total) % total;
+  let i = 0;
+  while (t >= durs[i]) { t -= durs[i]; i++; }
+
+  const key = i + ':' + list[i].url;
+  if (currentKey !== key) { currentKey = key; show(list[i], null, true, t / 1000); }
+  timer = setTimeout(syncTick, durs[i] - t + 15);
+}
+
+const run = () => (SYNC ? syncTick() : next());
 
 function apply(newData) {
   data = newData;
   localStorage.setItem(KEY, JSON.stringify(data));
   // Pre-carga para que no haya pantallazos negros
   (data.playlist || []).forEach((it) => { if (it.type === 'image') new Image().src = it.url; });
-  index = -1;
-  next();
+  index = -1; currentKey = '';
+  run();
 }
 
 const socket = io({ reconnectionDelayMax: 10000 });
-socket.on('connect', () => { dot.className = 'ok'; socket.emit('register', SCREEN); });
+function syncClock() {
+  const t0 = Date.now();
+  socket.emit('time', (serverNow) => {
+    const rtt = Date.now() - t0;
+    clockOffset = serverNow + rtt / 2 - Date.now();
+    if (SYNC && data) syncTick();
+  });
+}
+socket.on('connect', () => { dot.className = 'ok'; syncClock(); socket.emit('register', SCREEN); });
 socket.on('disconnect', () => { dot.className = ''; });
 socket.on('update', apply);
 socket.on('reload', () => location.reload());
+setInterval(() => socket.connected && syncClock(), 5 * 60000);
 
 document.getElementById('start').onclick = (e) => {
   e.currentTarget.style.display = 'none';
@@ -133,7 +213,7 @@ navigator.wakeLock?.request('screen').catch(() => {});
 // Recarga diaria a las 4am para mantener todo fresco
 setInterval(() => { const d = new Date(); if (d.getHours() === 4 && d.getMinutes() === 0) location.reload(); }, 60000);
 
-if (data) next();
+if (data) run();
 </script>
 </body>
 </html>

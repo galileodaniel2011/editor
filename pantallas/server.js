@@ -64,6 +64,7 @@ function screenPayload(id) {
   return {
     name: s.name,
     playlist: s.playlist.map((p) => ({ ...find(p.mediaId), duration: p.duration })).filter((x) => x.url),
+    startedAt: s.startedAt || 0, // para que las pantallas de un muro cambien a la vez
     override: s.override ? { ...find(s.override.mediaId), until: s.override.until } : null,
   };
 }
@@ -130,6 +131,8 @@ app.delete('/api/screens/:id', auth, (req, res) => {
 // Guardar playlist: [{mediaId, duration}]
 app.put('/api/screens/:id/playlist', auth, (req, res) => {
   const ids = req.params.id === '*' ? Object.keys(db.screens) : [req.params.id];
+  const startedAt = Date.now();
+  for (const id of ids) getScreen(id).startedAt = startedAt;
   for (const id of ids) getScreen(id).playlist = (req.body.playlist || []).map((p) => ({
     mediaId: p.mediaId, duration: Math.max(3, Number(p.duration) || 10),
   }));
@@ -165,6 +168,8 @@ io.on('connection', (socket) => {
     socket.emit('update', screenPayload(id));
     panelRefresh();
   });
+  // Reloj compartido: las pantallas preguntan la hora del servidor
+  socket.on('time', (cb) => { if (typeof cb === 'function') cb(Date.now()); });
   socket.on('admin', (pw) => { if (okPw(pw)) socket.join('admins'); });
   socket.on('disconnect', () => {
     if (socket.data.screenId) { getScreen(socket.data.screenId).lastSeen = Date.now(); save(); panelRefresh(); }

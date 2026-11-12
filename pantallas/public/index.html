@@ -78,7 +78,7 @@
   <!-- 3. PLAYLIST -->
   <div id="editor" class="card hidden">
     <h2>3. Qué se muestra en: <span id="edName"></span></h2>
-    <p class="mut">Toca “➕” en una imagen/video de arriba para agregarla. Cada cambio se envía solo a la pantalla. Las imágenes duran los segundos que indiques; los videos se reproducen completos.</p>
+    <p class="mut">Toca “➕” en una imagen/video de arriba para agregarla. Cada cambio se envía solo a la pantalla. Las imágenes duran los segundos que indiques; los videos se miden solos al agregarlos.</p>
     <div id="plist"></div>
     <div class="row" style="margin-top:12px">
       <button id="savePl">💾 Guardar y enviar a la pantalla</button>
@@ -139,7 +139,7 @@ function render() {
   const base = location.origin + '/player.html?pantalla=';
   $('#screens').innerHTML = state.screens.length ? state.screens.map((s) => `
     <div class="screen">
-      <div style="min-width:0;flex:1">
+      <div style="min-width:0;flex:1 1 240px">
         <div><span class="st ${s.online ? 'on' : ''}"></span><b>${esc(s.name)}</b>
           <span class="mut">${s.online ? 'en línea' : 'desconectada' + (s.lastSeen ? ' · visto ' + new Date(s.lastSeen).toLocaleString() : '')}</span></div>
         <div class="mut">${s.playlist.length} elementos${s.override ? ' · ⚡ mostrando contenido urgente' : ''}</div>
@@ -148,9 +148,11 @@ function render() {
       <div class="row">
         <button class="sm" onclick="edit('${s.id}')">✏️ Contenido</button>
         ${s.override ? `<button class="sm sec" onclick="clearNow('${s.id}')">Quitar ⚡</button>` : ''}
+        <button class="sm sec" onclick="toggleWall('${s.id}')">🧱 Muro</button>
         <button class="sm sec" onclick="reload('${s.id}')">🔄</button>
         <button class="sm sec" onclick="delScreen('${s.id}')">🗑️</button>
       </div>
+      ${walls[s.id] ? wallBox(s.id) : ''}
     </div>`).join('') + `
     <div class="screen"><b>Todas las pantallas</b>
       <div class="row"><button class="sm sec" onclick="clearNow('*')">Quitar ⚡ en todas</button>
@@ -169,7 +171,7 @@ function renderDraft() {
   $('#plist').innerHTML = draft.length ? draft.map((p, i) => {
     const m = state.media.find((x) => x.id === p.mediaId); if (!m) return '';
     return `<div class="pl-item">${preview(m)}<span class="nm">${i + 1}. ${esc(m.name)}</span>
-      ${m.type === 'image' ? `<input type="number" min="3" value="${p.duration}" onchange="draft[${i}].duration=+this.value;autoSave()"> s` : '<span class="mut">completo</span>'}
+      <input type="number" min="3" value="${p.duration}" onchange="draft[${i}].duration=+this.value;autoSave()"> s
       <button class="sm sec" onclick="move(${i},-1)">↑</button><button class="sm sec" onclick="move(${i},1)">↓</button>
       <button class="sm sec" onclick="draft.splice(${i},1);renderDraft();autoSave()">✕</button></div>`;
   }).join('') : '<p class="mut">Lista vacía.</p>';
@@ -208,7 +210,44 @@ window.autoSave = async () => {
   await api('PUT', `/api/screens/${editing}/playlist`, { playlist: draft });
   toast('✅ Enviado a la pantalla');
 };
-window.addToDraft = (mediaId) => { draft.push({ mediaId, duration: 10 }); renderDraft(); autoSave(); };
+window.addToDraft = (mediaId) => {
+  const m = state.media.find((x) => x.id === mediaId);
+  const item = { mediaId, duration: 10 };
+  draft.push(item); renderDraft(); autoSave();
+  if (m && m.type === 'video') {
+    // Mide cuánto dura el video (lo usan los muros para cambiar todos a la vez)
+    const v = document.createElement('video'); v.preload = 'metadata'; v.src = m.url;
+    v.onloadedmetadata = () => { item.duration = Math.max(3, Math.ceil(v.duration)); renderDraft(); autoSave(); };
+  }
+};
+
+// ---------- Muro de pantallas ----------
+let walls = {};
+try { walls = JSON.parse(localStorage.getItem('walls')) || {}; } catch (e) {}
+const saveWalls = () => { try { localStorage.setItem('walls', JSON.stringify(walls)); } catch (e) {} };
+window.toggleWall = (id) => { walls[id] = walls[id] ? null : { cols: 3, rows: 1, vert: false }; if (!walls[id]) delete walls[id]; saveWalls(); render(); };
+window.setWall = (id, k, v) => { walls[id][k] = v; saveWalls(); render(); };
+function wallBox(id) {
+  const w = walls[id], n = w.cols * w.rows;
+  const opt = (max, val) => Array.from({ length: max }, (_, i) => `<option ${i + 1 === val ? 'selected' : ''}>${i + 1}</option>`).join('');
+  const W = w.cols * (w.vert ? 1080 : 1920), H = w.rows * (w.vert ? 1920 : 1080);
+  const urls = Array.from({ length: n }, (_, i) => {
+    const url = `${location.origin}/player.html?pantalla=${id}&muro=${w.cols}x${w.rows}&pos=${i + 1}${w.vert ? '&rotar=90' : ''}`;
+    return `<div style="margin:6px 0"><b>TV ${i + 1}</b> <span class="mut">(fila ${Math.floor(i / w.cols) + 1}, columna ${i % w.cols + 1})</span><br><code>${url}</code></div>`;
+  }).join('');
+  return `<div style="flex-basis:100%;background:var(--bg);border-radius:10px;padding:12px;margin-top:6px">
+    <b>🧱 Muro de pantallas</b>
+    <p class="mut" style="margin:6px 0">Varias TVs juntas muestran <b>una sola imagen grande</b> y cambian al mismo tiempo.</p>
+    <div class="row">
+      <label>TVs a lo ancho <select onchange="setWall('${id}','cols',+this.value)">${opt(6, w.cols)}</select></label>
+      <label>de alto <select onchange="setWall('${id}','rows',+this.value)">${opt(4, w.rows)}</select></label>
+      <label><input type="checkbox" ${w.vert ? 'checked' : ''} onchange="setWall('${id}','vert',this.checked)"> TVs paradas (vertical)</label>
+    </div>
+    <p style="margin:10px 0 4px">📐 Diseña tus imágenes y videos de <b>${W} × ${H} px</b> y agrégalos con ✏️ Contenido.</p>
+    <p class="mut" style="margin:0 0 6px">Abre en cada TV su dirección (la TV muestra su número unos segundos para que sepas cuál es):</p>
+    ${urls}
+  </div>`;
+}
 window.move = (i, d) => { const j = i + d; if (j < 0 || j >= draft.length) return; [draft[i], draft[j]] = [draft[j], draft[i]]; renderDraft(); autoSave(); };
 $('#closeEd').onclick = () => { editing = null; render(); };
 $('#savePl').onclick = async () => { await api('PUT', `/api/screens/${editing}/playlist`, { playlist: draft }); toast('✅ Enviado a la pantalla'); };
