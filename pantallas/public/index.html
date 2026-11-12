@@ -78,7 +78,7 @@
   <!-- 3. PLAYLIST -->
   <div id="editor" class="card hidden">
     <h2>3. Qué se muestra en: <span id="edName"></span></h2>
-    <p class="mut">Toca “➕” en una imagen/video de arriba para agregarla. Las imágenes duran los segundos que indiques; los videos se reproducen completos.</p>
+    <p class="mut">Toca “➕” en una imagen/video de arriba para agregarla. Cada cambio se envía solo a la pantalla. Las imágenes duran los segundos que indiques; los videos se reproducen completos.</p>
     <div id="plist"></div>
     <div class="row" style="margin-top:12px">
       <button id="savePl">💾 Guardar y enviar a la pantalla</button>
@@ -169,9 +169,9 @@ function renderDraft() {
   $('#plist').innerHTML = draft.length ? draft.map((p, i) => {
     const m = state.media.find((x) => x.id === p.mediaId); if (!m) return '';
     return `<div class="pl-item">${preview(m)}<span class="nm">${i + 1}. ${esc(m.name)}</span>
-      ${m.type === 'image' ? `<input type="number" min="3" value="${p.duration}" onchange="draft[${i}].duration=+this.value"> s` : '<span class="mut">completo</span>'}
+      ${m.type === 'image' ? `<input type="number" min="3" value="${p.duration}" onchange="draft[${i}].duration=+this.value;autoSave()"> s` : '<span class="mut">completo</span>'}
       <button class="sm sec" onclick="move(${i},-1)">↑</button><button class="sm sec" onclick="move(${i},1)">↓</button>
-      <button class="sm sec" onclick="draft.splice(${i},1);renderDraft()">✕</button></div>`;
+      <button class="sm sec" onclick="draft.splice(${i},1);renderDraft();autoSave()">✕</button></div>`;
   }).join('') : '<p class="mut">Lista vacía.</p>';
 }
 
@@ -202,8 +202,14 @@ window.edit = (id) => {
   draft = state.screens.find((s) => s.id === id).playlist.map((p) => ({ ...p }));
   render(); $('#editor').scrollIntoView({ behavior: 'smooth' });
 };
-window.addToDraft = (mediaId) => { draft.push({ mediaId, duration: 10 }); renderDraft(); toast('Agregado a la lista'); };
-window.move = (i, d) => { const j = i + d; if (j < 0 || j >= draft.length) return; [draft[i], draft[j]] = [draft[j], draft[i]]; renderDraft(); };
+// Cada cambio se guarda y se envía solo a la pantalla
+window.autoSave = async () => {
+  if (!editing) return;
+  await api('PUT', `/api/screens/${editing}/playlist`, { playlist: draft });
+  toast('✅ Enviado a la pantalla');
+};
+window.addToDraft = (mediaId) => { draft.push({ mediaId, duration: 10 }); renderDraft(); autoSave(); };
+window.move = (i, d) => { const j = i + d; if (j < 0 || j >= draft.length) return; [draft[i], draft[j]] = [draft[j], draft[i]]; renderDraft(); autoSave(); };
 $('#closeEd').onclick = () => { editing = null; render(); };
 $('#savePl').onclick = async () => { await api('PUT', `/api/screens/${editing}/playlist`, { playlist: draft }); toast('✅ Enviado a la pantalla'); };
 $('#savePlAll').onclick = async () => {
