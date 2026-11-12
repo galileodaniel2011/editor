@@ -66,6 +66,8 @@ function screenPayload(id) {
     playlist: s.playlist.map((p) => ({ ...find(p.mediaId), duration: p.duration })).filter((x) => x.url),
     startedAt: s.startedAt || 0, // para que las pantallas de un muro cambien a la vez
     override: s.override ? { ...find(s.override.mediaId), until: s.override.until } : null,
+    live: { layout: 'L', every: 10, ...(s.live || {}) }, // publicidad sobre el partido
+    liveNow: s.liveNow || 0,
   };
 }
 function pushTo(id) { io.to('screen:' + id).emit('update', screenPayload(id)); }
@@ -149,6 +151,25 @@ app.post('/api/screens/:id/override', auth, (req, res) => {
       ? { mediaId: req.body.mediaId, until: Date.now() + minutes * 60000 } : null;
   }
   save(); ids.forEach(pushTo); panelRefresh();
+  res.json({ ok: true });
+});
+
+// Publicidad sobre el partido: forma (L, derecha, izquierda, abajo) y cada cuántos minutos
+const LAYOUTS = ['L', 'derecha', 'izquierda', 'abajo'];
+app.put('/api/screens/:id/live', auth, (req, res) => {
+  const s = getScreen(req.params.id);
+  s.live = {
+    layout: LAYOUTS.includes(req.body.layout) ? req.body.layout : 'L',
+    every: Math.min(120, Math.max(1, Number(req.body.every) || 10)),
+  };
+  save(); pushTo(s.id); panelRefresh();
+  res.json(s.live);
+});
+// "Mostrar publicidad ahora" (por ejemplo, en una pausa o después de un gol)
+app.post('/api/screens/:id/live/now', auth, (req, res) => {
+  const s = getScreen(req.params.id);
+  s.liveNow = Date.now();
+  save(); pushTo(s.id);
   res.json({ ok: true });
 });
 

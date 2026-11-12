@@ -27,6 +27,15 @@
   #dot.ok { background: transparent; }
   #start { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
            background: #000c; color: #fff; font: 28px system-ui; cursor: pointer; }
+  /* ---- Partido en vivo + publicidad (squeeze back) ---- */
+  #adbg { position: absolute; inset: 0; z-index: 1; background: #000; }
+  #adbg .ad { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s ease; }
+  #adbg .ad.on { opacity: 1; }
+  #live { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: fill; background: #000; z-index: 2;
+          transition: left .9s ease, top .9s ease, width .9s ease, height .9s ease, box-shadow .9s; }
+  #live.small { box-shadow: 0 0 40px #000a; }
+  #nosignal { position: absolute; inset: 0; z-index: 3; display: none; align-items: center; justify-content: center;
+              color: #aaa; font: 3vmin system-ui; text-align: center; padding: 5vmin; background: #111; }
   #tag { position: absolute; left: 0; right: 0; bottom: 30%; text-align: center; font: bold 15vmin system-ui;
          color: #fff; text-shadow: 0 0 20px #000; display: none; }
 </style>
@@ -48,6 +57,8 @@
 //              &muro=3x1&pos=2            (muro de 3 de ancho x 1 de alto, esta es la 2ª)
 //              &salto=3&pos=1             (3 pantallas separadas: las imágenes saltan de la 1 a la 2 a la 3)
 //              &sincronizar=1             (varias pantallas cambian al mismo tiempo)
+//              &en_vivo=1                 (partido desde capturadora HDMI + publicidad que lo encoge)
+//                 &sonido=0   sin sonido  ·  &camara=2   usar la 2ª capturadora
 // ------------------------------------------------------------
 const params = new URLSearchParams(location.search);
 const SCREEN = (params.get('pantalla') || 'pantalla-1').toLowerCase();
@@ -196,7 +207,114 @@ function syncTick() {
   timer = setTimeout(syncTick, durs[k] - t + 15);
 }
 
-const run = () => (SYNC ? syncTick() : next());
+// =====================================================================
+//  PARTIDO EN VIVO + PUBLICIDAD
+//  Decodificador → HDMI → capturadora USB → este programa → TV.
+//  Cada X minutos el partido se encoge y aparece la publicidad alrededor.
+// =====================================================================
+const LIVE = params.get('en_vivo') === '1';
+const SOUND = params.get('sonido') !== '0';
+// Zona que ocupa el partido cuando se encoge (% de la pantalla). La publicidad
+// es una imagen de 1920x1080 que queda DETRÁS: se ve en la parte libre.
+const RECTS = {
+  L:         [0, 0, 75, 75],      // publicidad a la derecha y abajo (forma de L)
+  derecha:   [0, 12.5, 75, 75],   // publicidad a la derecha
+  izquierda: [25, 12.5, 75, 75],  // publicidad a la izquierda
+  abajo:     [10, 0, 80, 80],     // publicidad abajo
+};
+let liveEl, adbg, noSignal, adKey = '';
+
+function setLiveRect(r) {
+  const [l, t, w, h] = r || [0, 0, 100, 100];
+  Object.assign(liveEl.style, { left: l + '%', top: t + '%', width: w + '%', height: h + '%' });
+  liveEl.classList.toggle('small', !!r);
+}
+
+function setAd(item, layout) {
+  const key = item ? item.url + '|' + layout : '';
+  if (key === adKey) return;
+  adKey = key;
+  const old = [...adbg.children];
+  if (item) {
+    const el = item.type === 'video' ? document.createElement('video') : document.createElement('img');
+    if (item.type === 'video') { el.muted = true; el.loop = true; el.autoplay = true; el.playsInline = true; }
+    el.src = item.url; el.className = 'ad';
+    adbg.appendChild(el);
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('on')));
+    setLiveRect(RECTS[layout] || RECTS.L);
+    setTimeout(() => old.forEach((o) => o.remove()), 700);
+  } else {
+    setLiveRect(null);
+    setTimeout(() => old.forEach((o) => o.classList.remove('on')), 900); // se va cuando el partido ya creció
+    setTimeout(() => old.forEach((o) => o.remove()), 1600);
+  }
+}
+
+function liveTick() {
+  if (!data) return setAd(null);
+  const cfg = data.live || { layout: 'L', every: 10 };
+  const t = now();
+  // "⚡ YA" desde el panel: se muestra como publicidad sobre el partido
+  if (data.override && data.override.until > t) return setAd(data.override, cfg.layout);
+  const list = data.playlist || [];
+  if (!list.length) return setAd(null);
+  const every = cfg.every * 60000;
+  const since = t - (data.startedAt || 0);
+  const k = Math.floor(since / every), inCycle = since - k * every;
+  const idx = ((k % list.length) + list.length) % list.length;
+  let item = null;
+  if (inCycle < (list[idx].duration || 10) * 1000) item = list[idx];
+  // Botón "Mostrar publicidad ahora"
+  const nextAd = list[(idx + 1) % list.length];
+  if (!item && data.liveNow && t - data.liveNow < (nextAd.duration || 10) * 1000) item = nextAd;
+  setAd(item, cfg.layout);
+}
+
+async function startCapture() {
+  const md = navigator.mediaDevices;
+  try {
+    // Primero pedimos permiso (para poder leer los nombres de los aparatos)
+    const probe = await md.getUserMedia({ video: true, audio: SOUND }).catch(() => md.getUserMedia({ video: true }));
+    const devs = await md.enumerateDevices();
+    probe.getTracks().forEach((tr) => tr.stop());
+    const isCapture = (d) => /capture|hdmi|usb video|cam link|elgato|macrosilicon|ms2109|ezcap|av to usb/i.test(d.label);
+    const cams = devs.filter((d) => d.kind === 'videoinput');
+    const mics = devs.filter((d) => d.kind === 'audioinput');
+    const want = parseInt(params.get('camara'));
+    const cam = want ? cams[want - 1] : (cams.find(isCapture) || cams[0]);
+    const mic = mics.find(isCapture);
+    const video = { deviceId: cam ? { exact: cam.deviceId } : undefined, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+    const audio = SOUND ? { deviceId: mic ? { exact: mic.deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false;
+    const stream = await md.getUserMedia({ video, audio }).catch(() => md.getUserMedia({ video }));
+    liveEl.srcObject = stream;
+    liveEl.muted = !SOUND;
+    try { await liveEl.play(); }
+    catch (e) {
+      // El navegador no deja arrancar con sonido sin un toque: arrancamos mudo y pedimos un toque
+      liveEl.muted = true; await liveEl.play().catch(() => {});
+      if (SOUND) { const st = document.getElementById('start'); st.textContent = 'Toca para activar el sonido del partido'; st.style.display = 'flex'; }
+    }
+    noSignal.style.display = 'none';
+    stream.getVideoTracks()[0].onended = () => { noSignal.style.display = 'flex'; setTimeout(startCapture, 3000); };
+  } catch (e) {
+    noSignal.textContent = 'Sin señal del partido. Revisa que la capturadora HDMI esté conectada y que esta pantalla tenga permiso de cámara. (' + e.name + ')';
+    noSignal.style.display = 'flex';
+    setTimeout(startCapture, 10000);
+  }
+}
+
+if (LIVE) {
+  msg.style.display = 'none';
+  document.getElementById('tag').style.display = 'none';
+  adbg = document.createElement('div'); adbg.id = 'adbg';
+  liveEl = document.createElement('video'); liveEl.id = 'live'; liveEl.playsInline = true; liveEl.autoplay = true;
+  noSignal = document.createElement('div'); noSignal.id = 'nosignal';
+  root.append(adbg, liveEl, noSignal);
+  startCapture();
+  setInterval(liveTick, 300);
+}
+
+const run = () => (LIVE ? liveTick() : SYNC ? syncTick() : next());
 
 function apply(newData) {
   data = newData;
@@ -226,6 +344,7 @@ document.getElementById('start').onclick = (e) => {
   e.currentTarget.style.display = 'none';
   document.documentElement.requestFullscreen?.().catch(() => {});
   if (current && current.play) current.play();
+  if (LIVE && liveEl) { liveEl.muted = !SOUND; liveEl.play().catch(() => {}); }
 };
 
 // Evita que la TV/tablet se apague

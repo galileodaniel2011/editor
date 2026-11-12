@@ -82,6 +82,17 @@ En el panel, en la pantalla que quieras, toca **🧱 Varias TVs** → **Pegadas*
 - **Separadas (salto):** en el mismo botón elige "Separadas". Son TVs en distintas zonas del local: cada imagen aparece en la TV 1, luego salta a la TV 2, luego a la 3… (dirección con `&salto=3&pos=1`).
 - Si quieres varias pantallas separadas que muestren lo mismo al mismo tiempo, agrega `&sincronizar=1`.
 
+### ⚽ Partido + publicidad (el partido se encoge y aparece tu publicidad)
+Conexión: **decodificador → HDMI → capturadora USB → mini PC → HDMI → TV**.
+1. En el panel, en la pantalla del bar, toca **⚽ Partido**: elige la forma (L, derecha, izquierda, abajo) y cada cuántos minutos sale.
+2. Las publicidades son las imágenes de **✏️ Contenido** de esa pantalla (1920 × 1080; el panel muestra qué zona tapa el partido). Los segundos de cada una = lo que dura.
+3. En el mini PC abre: `https://TU-SERVIDOR/player.html?pantalla=bar-tv1&en_vivo=1` y acepta el permiso de cámara (una sola vez).
+   - Chrome en modo kiosco: `chrome --kiosk --autoplay-policy=no-user-gesture-required "https://TU-SERVIDOR/player.html?pantalla=bar-tv1&en_vivo=1"`
+   - `&sonido=0` para quitar el sonido del partido · `&camara=2` si hay más de una cámara.
+4. **⚡ Mostrar publicidad ahora** la lanza al instante (medio tiempo, después de un gol…).
+
+> Si la imagen sale negra, el decodificador tiene protección anticopia (HDCP) y bloquea la capturadora.
+
 Los videos se reproducen **sin sonido**, porque los navegadores bloquean el autoplay con audio. Funcionan mejor en **MP4 (H.264)**.
 
 ## Archivos
