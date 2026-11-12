@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel de Pantallas</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --tx:#1d1f23; --mut:#6b7079; --pri:#e4572e; --ok:#2e9e5b; --bd:#e2e4e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14161a; --card:#1e2127; --tx:#eceef1; --mut:#9aa0aa; --bd:#2d3139; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--tx); }
+  header { background:var(--pri); color:#fff; padding:14px 16px; font-weight:600; font-size:18px; display:flex; justify-content:space-between; }
+  main { max-width:900px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; margin-bottom:16px; }
+  h2 { margin:0 0 12px; font-size:17px; }
+  button, .btn { background:var(--pri); color:#fff; border:0; border-radius:8px; padding:9px 14px; font:inherit; cursor:pointer; }
+  button.sec { background:transparent; color:var(--tx); border:1px solid var(--bd); }
+  button.sm { padding:5px 9px; font-size:13px; }
+  input, select { font:inherit; padding:9px; border:1px solid var(--bd); border-radius:8px; background:var(--card); color:var(--tx); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px,1fr)); gap:10px; }
+  .thumb { border:1px solid var(--bd); border-radius:10px; overflow:hidden; background:#000; position:relative; }
+  .thumb img, .thumb video { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; }
+  .thumb .cap { background:var(--card); padding:6px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .thumb .acts { display:flex; gap:4px; padding:0 6px 6px; background:var(--card); }
+  .thumb .tag { position:absolute; top:6px; left:6px; background:#000a; color:#fff; font-size:11px; padding:2px 6px; border-radius:4px; }
+  .screen { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 0; border-top:1px solid var(--bd); flex-wrap:wrap; }
+  .st { display:inline-block; width:10px; height:10px; border-radius:50%; background:#c33; margin-right:6px; }
+  .st.on { background:var(--ok); }
+  .mut { color:var(--mut); font-size:13px; }
+  .pl-item { display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--bd); }
+  .pl-item img, .pl-item video { width:64px; height:36px; object-fit:cover; border-radius:4px; background:#000; }
+  .pl-item .nm { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pl-item input { width:62px; }
+  #login { max-width:340px; margin:80px auto; }
+  .hidden { display:none !important; }
+  code { background:var(--bg); padding:2px 5px; border-radius:4px; font-size:13px; word-break:break-all; }
+  #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#222; color:#fff; padding:10px 16px; border-radius:8px; opacity:0; transition:.3s; pointer-events:none; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header><span>📺 Pantallas del Restaurante</span><span id="logout" class="hidden" style="cursor:pointer;font-weight:400">Salir</span></header>
+
+<!-- LOGIN -->
+<div id="login" class="card">
+  <h2>Entrar al panel</h2>
+  <form id="loginForm" class="row">
+    <input id="pw" type="password" placeholder="Contraseña" style="flex:1" autofocus>
+    <button>Entrar</button>
+  </form>
+</div>
+
+<main id="app" class="hidden">
+  <!-- 1. SUBIR -->
+  <div class="card">
+    <h2>1. Sube tus imágenes y videos</h2>
+    <div class="row">
+      <label class="btn">📤 Elegir archivos
+        <input id="files" type="file" accept="image/*,video/*" multiple class="hidden">
+      </label>
+      <span id="upStatus" class="mut">JPG, PNG, MP4… (puedes elegir varios)</span>
+    </div>
+    <div id="gallery" class="grid" style="margin-top:14px"></div>
+  </div>
+
+  <!-- 2. PANTALLAS -->
+  <div class="card">
+    <h2>2. Tus pantallas</h2>
+    <form id="addScreen" class="row">
+      <input id="newId" placeholder="código (ej: centro-tv1)" required style="flex:1;min-width:150px">
+      <input id="newName" placeholder="nombre (ej: Local Centro - Caja)" style="flex:1;min-width:150px">
+      <button>Agregar</button>
+    </form>
+    <div id="screens" style="margin-top:10px"></div>
+  </div>
+
+  <!-- 3. PLAYLIST -->
+  <div id="editor" class="card hidden">
+    <h2>3. Qué se muestra en: <span id="edName"></span></h2>
+    <p class="mut">Toca “➕” en una imagen/video de arriba para agregarla. Las imágenes duran los segundos que indiques; los videos se reproducen completos.</p>
+    <div id="plist"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="savePl">💾 Guardar y enviar a la pantalla</button>
+      <button id="savePlAll" class="sec">Enviar esta lista a TODAS</button>
+      <button id="closeEd" class="sec">Cerrar</button>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+let PW = localStorage.getItem('pw') || '';
+let state = { media: [], screens: [] };
+let editing = null;   // id de pantalla en edición
+let draft = [];       // playlist en edición
+
+function toast(t) { const e = $('#toast'); e.textContent = t; e.classList.add('show'); setTimeout(() => e.classList.remove('show'), 2200); }
+async function api(method, url, body, isForm) {
+  const r = await fetch(url, { method, headers: { 'x-password': PW, ...(isForm ? {} : { 'Content-Type': 'application/json' }) },
+    body: isForm ? body : body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { logout(); throw new Error('auth'); }
+  return r.json();
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const preview = (m) => m.type === 'video' ? `<video src="${m.url}#t=1" muted preload="metadata"></video>` : `<img src="${m.url}" loading="lazy">`;
+
+// ---------- Login ----------
+$('#loginForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const r = await (await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password: $('#pw').value }) })).json();
+  if (r.ok) { PW = $('#pw').value; localStorage.setItem('pw', PW); start(); } else toast('Contraseña incorrecta');
+};
+function logout() { localStorage.removeItem('pw'); location.reload(); }
+$('#logout').onclick = logout;
+
+let socket;
+async function start() {
+  $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#logout').classList.remove('hidden');
+  await load();
+  socket = io(); socket.on('connect', () => socket.emit('admin', PW)); socket.on('refresh', load);
+}
+async function load() { state = await api('GET', '/api/state'); render(); }
+
+// ---------- Render ----------
+function render() {
+  $('#gallery').innerHTML = state.media.length ? state.media.map((m) => `
+    <div class="thumb">${preview(m)}<span class="tag">${m.type === 'video' ? '🎬 video' : '🖼️ imagen'}</span>
+      <div class="cap" title="${esc(m.name)}">${esc(m.name)}</div>
+      <div class="acts">
+        <button class="sm ${editing ? '' : 'hidden'}" onclick="addToDraft('${m.id}')">➕</button>
+        <button class="sm sec" onclick="showNow('${m.id}')">⚡ YA</button>
+        <button class="sm sec" onclick="delMedia('${m.id}')">🗑️</button>
+      </div></div>`).join('') : '<p class="mut">Aún no has subido nada.</p>';
+
+  const base = location.origin + '/player.html?pantalla=';
+  $('#screens').innerHTML = state.screens.length ? state.screens.map((s) => `
+    <div class="screen">
+      <div style="min-width:0;flex:1">
+        <div><span class="st ${s.online ? 'on' : ''}"></span><b>${esc(s.name)}</b>
+          <span class="mut">${s.online ? 'en línea' : 'desconectada' + (s.lastSeen ? ' · visto ' + new Date(s.lastSeen).toLocaleString() : '')}</span></div>
+        <div class="mut">${s.playlist.length} elementos${s.override ? ' · ⚡ mostrando contenido urgente' : ''}</div>
+        <div class="mut">Dirección para la TV: <code>${base + s.id}</code></div>
+      </div>
+      <div class="row">
+        <button class="sm" onclick="edit('${s.id}')">✏️ Contenido</button>
+        ${s.override ? `<button class="sm sec" onclick="clearNow('${s.id}')">Quitar ⚡</button>` : ''}
+        <button class="sm sec" onclick="reload('${s.id}')">🔄</button>
+        <button class="sm sec" onclick="delScreen('${s.id}')">🗑️</button>
+      </div>
+    </div>`).join('') + `
+    <div class="screen"><b>Todas las pantallas</b>
+      <div class="row"><button class="sm sec" onclick="clearNow('*')">Quitar ⚡ en todas</button>
+      <button class="sm sec" onclick="reload('*')">🔄 Recargar todas</button></div></div>`
+    : '<p class="mut">Agrega tu primera pantalla arriba.</p>';
+
+  renderDraft();
+}
+
+function renderDraft() {
+  if (!editing) { $('#editor').classList.add('hidden'); return; }
+  const s = state.screens.find((x) => x.id === editing);
+  if (!s) { editing = null; return renderDraft(); }
+  $('#editor').classList.remove('hidden');
+  $('#edName').textContent = s.name;
+  $('#plist').innerHTML = draft.length ? draft.map((p, i) => {
+    const m = state.media.find((x) => x.id === p.mediaId); if (!m) return '';
+    return `<div class="pl-item">${preview(m)}<span class="nm">${i + 1}. ${esc(m.name)}</span>
+      ${m.type === 'image' ? `<input type="number" min="3" value="${p.duration}" onchange="draft[${i}].duration=+this.value"> s` : '<span class="mut">completo</span>'}
+      <button class="sm sec" onclick="move(${i},-1)">↑</button><button class="sm sec" onclick="move(${i},1)">↓</button>
+      <button class="sm sec" onclick="draft.splice(${i},1);renderDraft()">✕</button></div>`;
+  }).join('') : '<p class="mut">Lista vacía.</p>';
+}
+
+// ---------- Acciones ----------
+$('#files').onchange = async (e) => {
+  const files = [...e.target.files]; if (!files.length) return;
+  const fd = new FormData(); files.forEach((f) => fd.append('files', f));
+  $('#upStatus').textContent = 'Subiendo ' + files.length + ' archivo(s)…';
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/media'); xhr.setRequestHeader('x-password', PW);
+  xhr.upload.onprogress = (ev) => { $('#upStatus').textContent = 'Subiendo… ' + Math.round(ev.loaded / ev.total * 100) + '%'; };
+  xhr.onload = () => { $('#upStatus').textContent = '✅ Listo'; e.target.value = ''; load(); };
+  xhr.onerror = () => { $('#upStatus').textContent = '❌ Error al subir'; };
+  xhr.send(fd);
+};
+window.delMedia = async (id) => { if (confirm('¿Borrar este archivo de todas las pantallas?')) { await api('DELETE', '/api/media/' + id); load(); } };
+
+$('#addScreen').onsubmit = async (e) => {
+  e.preventDefault();
+  await api('POST', '/api/screens', { id: $('#newId').value, name: $('#newName').value || $('#newId').value });
+  $('#newId').value = $('#newName').value = ''; load();
+};
+window.delScreen = async (id) => { if (confirm('¿Eliminar esta pantalla del panel?')) { await api('DELETE', '/api/screens/' + id); load(); } };
+window.reload = async (id) => { await api('POST', `/api/screens/${encodeURIComponent(id)}/reload`); toast('Recargando…'); };
+
+window.edit = (id) => {
+  editing = id;
+  draft = state.screens.find((s) => s.id === id).playlist.map((p) => ({ ...p }));
+  render(); $('#editor').scrollIntoView({ behavior: 'smooth' });
+};
+window.addToDraft = (mediaId) => { draft.push({ mediaId, duration: 10 }); renderDraft(); toast('Agregado a la lista'); };
+window.move = (i, d) => { const j = i + d; if (j < 0 || j >= draft.length) return; [draft[i], draft[j]] = [draft[j], draft[i]]; renderDraft(); };
+$('#closeEd').onclick = () => { editing = null; render(); };
+$('#savePl').onclick = async () => { await api('PUT', `/api/screens/${editing}/playlist`, { playlist: draft }); toast('✅ Enviado a la pantalla'); };
+$('#savePlAll').onclick = async () => {
+  if (!confirm('¿Reemplazar el contenido de TODAS las pantallas con esta lista?')) return;
+  await api('PUT', '/api/screens/*/playlist', { playlist: draft }); toast('✅ Enviado a todas');
+};
+
+// "Mostrar YA": contenido urgente encima de todo (promo del día, aviso…)
+window.showNow = async (mediaId) => {
+  const opts = state.screens.map((s, i) => `${i + 1}) ${s.name}`).join('\n');
+  const which = prompt(`¿En qué pantalla? Escribe el número, o 0 para TODAS:\n0) Todas\n${opts}`, '0');
+  if (which === null) return;
+  const s = which.trim() === '0' ? { id: '*' } : state.screens[+which - 1];
+  if (!s) return toast('Número no válido');
+  const minutes = prompt('¿Cuántos minutos?', '15'); if (!minutes) return;
+  await api('POST', `/api/screens/${encodeURIComponent(s.id)}/override`, { mediaId, minutes: +minutes });
+  toast('⚡ Mostrando ahora');
+};
+window.clearNow = async (id) => { await api('POST', `/api/screens/${encodeURIComponent(id)}/override`, { minutes: 0 }); toast('Vuelve a la programación normal'); };
+
+if (PW) start().catch(() => {});
+</script>
+</body>
+</html>
