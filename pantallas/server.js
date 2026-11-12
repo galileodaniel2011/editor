@@ -13,7 +13,8 @@ const multer = require('multer');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
-const PASSWORD = process.env.ADMIN_PASSWORD || 'cambiar123'; // ¡cámbiala!
+const PASSWORD = (process.env.ADMIN_PASSWORD || 'cambiar123').trim(); // ¡cámbiala!
+const okPw = (p) => String(p || '').trim() === PASSWORD;
 const DATA_DIR = process.env.DATA_DIR || __dirname; // carpeta donde se guarda todo
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 const UPLOADS = path.join(DATA_DIR, 'uploads');
@@ -42,7 +43,7 @@ app.use('/uploads', express.static(UPLOADS, { maxAge: '7d' }));
 
 // Seguridad mínima: el panel manda la contraseña en la cabecera x-password
 function auth(req, res, next) {
-  if (req.get('x-password') === PASSWORD) return next();
+  if (okPw(req.get('x-password'))) return next();
   res.status(401).json({ error: 'Contraseña incorrecta' });
 }
 
@@ -71,7 +72,7 @@ function pushAll() { Object.keys(db.screens).forEach(pushTo); }
 function panelRefresh() { io.to('admins').emit('refresh'); }
 
 // ---------- API del panel ----------
-app.post('/api/login', (req, res) => res.json({ ok: req.body.password === PASSWORD }));
+app.post('/api/login', (req, res) => res.json({ ok: okPw(req.body.password) }));
 
 app.get('/api/state', auth, (req, res) => {
   const online = new Set();
@@ -164,7 +165,7 @@ io.on('connection', (socket) => {
     socket.emit('update', screenPayload(id));
     panelRefresh();
   });
-  socket.on('admin', (pw) => { if (pw === PASSWORD) socket.join('admins'); });
+  socket.on('admin', (pw) => { if (okPw(pw)) socket.join('admins'); });
   socket.on('disconnect', () => {
     if (socket.data.screenId) { getScreen(socket.data.screenId).lastSeen = Date.now(); save(); panelRefresh(); }
   });

@@ -46,7 +46,7 @@
 <div id="login" class="card">
   <h2>Entrar al panel</h2>
   <form id="loginForm" class="row">
-    <input id="pw" type="password" placeholder="Contraseña" style="flex:1" autofocus>
+    <input id="pw" type="password" placeholder="Contraseña" style="flex:1" autofocus autocapitalize="off" autocorrect="off" autocomplete="current-password" spellcheck="false">
     <button>Entrar</button>
   </form>
 </div>
@@ -112,7 +112,7 @@ const preview = (m) => m.type === 'video' ? `<video src="${m.url}#t=1" muted pre
 $('#loginForm').onsubmit = async (e) => {
   e.preventDefault();
   const r = await (await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password: $('#pw').value }) })).json();
-  if (r.ok) { PW = $('#pw').value; localStorage.setItem('pw', PW); start(); } else toast('Contraseña incorrecta');
+  if (r.ok) { PW = $('#pw').value.trim(); localStorage.setItem('pw', PW); start(); } else toast('Contraseña incorrecta');
 };
 function logout() { localStorage.removeItem('pw'); location.reload(); }
 $('#logout').onclick = logout;
